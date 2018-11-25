@@ -1,0 +1,606 @@
+---
+title: "CS Educators Stack Exchange: Exploring User Interactions"
+author: "Sukanya Moudgalya & K. Bret Staudt Willet"
+date: "11/20/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, message=FALSE)
+```
+
+
+#Introduction
+
+The Stack Exchange Network is one of the largest question-and-answer platforms in the world, founded in 2009 and boasting over 100 million unique monthly visitors by 2015. It has many subject-specific forums for coding related topics, Mathematics, Engineering, Photography, etc.—133 different sites as of October 2018. More recently, Stack Exchange has recently opened up discussion forums for Math  educators (2013) and Computer Science educators (2016) as well. For this project, we will focus on the users of the discussion forum [Computer Science Educators’ Stack Exchange](https://cseducators.stackexchange.com/) (CSEd SE). The description of the forum calls it ‘A question and answer site for those involved in the field of teaching Computer Science.’ 
+
+In this forum, registered users can ask questions on a wide range of topics related to Computer Science (CS) education. Once they ask a question, they can assign it ‘tags’, so that similar groups of questions can be identified by a common theme or idea. Some tags that are currently present on the forum include ‘curriculum design,’ ‘student motivation,’ ‘algorithm,’ etc. Users can also reply to (i.e., answer) questions posed by other users, comment on both questions and answers, upvote and downvote questions and answers, and so on—through the voting mechanism, users are held accountable to what they post on the forum. The content on the forum is thus regulated by the forum users and members to a large extent. 
+
+In addition to ‘normal’ user regulation, a set of registered users also act as ‘moderators’ or ‘editors’. Editors can edit the text of what other people post. Moderators, on the other hand, have more power. They can follow up with posts that are flagged as spam or offensive, delete and manage other users, combine or collapse tags, lock posts so that no one can change them or vote on them, and so on [(read more here)](https://stackoverflow.blog/2009/05/18/a-theory-of-moderation/). 
+
+The users on this forum range from actual K-12 and college-level CS educators to working professionals in the software industry, students, and other people interested in CS education. The users also belong to many different countries, such as the USA, UK, Canada, Ireland, India, Finland, etc. Each user has [reputation points](https://meta.stackexchange.com/questions/7237/how-does-reputation-work) primarily based on the quality of their posts, such as user-generated votes their posts receive. The reputation changes across time are accessible for people to see. 
+
+# Purpose
+
+This study explores the kinds of interaction between the users, with a focus on the top voted questions. It seeks to describe the kind of users, based on their profession, location, reputation, etc., that tend to ask questions or respond to the top questions. It also seeks to understand if the users tend to cluster around certain question tags (topic area) or if the clusters are agnostic to the topics and user characteristics.
+
+In the second part of the study, we will focus on trying to interpret the reasons for users choosing to answer the questions. It will explore if the reasons are dependent to the topic tag or some characteristic of the users who ask the question. 
+
+# Theoretical Framework and Research Questions
+
+Communities of practice are “....groups of people who share a concern or a passion for something they do and learn how to do it better as they interact regularly” (Wenger, 2011, p. 1). These communities have the following traits: (a) a domain of shared interest; (b) people who engage in joint activities and discussions; and (c) members who are practitioners (such as educators). Further, according to Wenger, they should demonstrate (a) mutual engagement (such as a dialogue instead of one directional information flow); (b) a joint enterprise; and (c) a shared repertoire. These three traits represent “...three dimensions of the relation by which practice is the source of coherence of a community” (Wenger, 1998, p. 72).
+
+The CSEd SE has many elements that could potentially make it a ‘community of practice’. For instance, there are clear boundaries in terms of membership to the forum. The forum has a unique purpose, that is to build knowledge and dialogue in the domain of CS education. Further, the discussions on the forum are not generally a unidirectional venture. The commenting feature, for instance, allows scope for a back and forth dialogue. Finally, the presence of moderators and editors for maintenance of the forum, scope of democratic elections for the selection of moderators, reputation points based on user-generated voting system, gives CSEd SE the traits of a community of practice. Indeed, a literature review of informal online teacher communities revealed that the communities of practice framework has often been used to study teacher interactions in online forums (Macià & García, 2016).
+
+Using this communities of practice framework, we focused our study to answer three research questions:  
+1. What are the characteristics of users who contributed to the 50 highest-voted questions in the CSEd SE?  
+2. Does network clustering occur in the context of users who contributed to the 50 highest-voted questions? What are some characteristics of these clusters?  
+3. From all the questions that users are exposed to, what factors predict the questions that users to respond to?
+
+# Method
+
+## Data Collection
+
+The data from the CSEd SE forum were collected through data mining, using the statistical software _R_ (R Core Team, 2018). In particular, we used the R package _stackr_ (Robinson, 2018) to extract data from the CSEd SE website. The stackr package helps obtain the “read-only features of the Stack Exchange API with the ability to download information on questions, answers, users, tags, and other aspects of the site so that they can be analyzed in R”.
+
+Using stackr, we were able to collect the metadata for CSEd SE questions, answers, comments, tags, and users in the week of 7th-13th June 2018. These metadata included information such as question identity number, answer identity number, user identity number, tag name, reputation scores of users, the date they joined the forum, and so on. This data collection resulted in a corpus of 559 questions, 2,675 answers, and 7,209 comments from CSEd SE. 
+
+## Data Analysis
+
+First, we loaded the necessary R packages and our data:
+
+```{r libraries, include=TRUE}
+#library(stackr)  # for collecting data from Stack Exchange
+library(tidyverse)  # for data manipulation; includes library(dplyr); library(ggplot2)
+library(stringr)  # for ease of working with string and character varbiables
+library(lubridate)  # for ease of working with dates
+library(gridExtra)  # for working with "grid" graphics, notably to arrange multiple grid-based plots on a page, and draw tables
+library(igraph)  # for processing social network
+library(ggraph)  # for visualizing social network
+library(moments)  # for skewness and kurtosis statistics
+library(lme4)  # for building selection model using linear mixed-effects
+library(ergm)  # for building selection model using exponential-family random graph models
+```
+
+
+```{r build, include=FALSE}
+library(tidyverse)
+file_list <- stringr::str_extract_all(dir(), "^data\\S+", simplify=TRUE)
+file_list <- file_list[file_list[,1] != "", ]
+#1: answers
+#2: comments
+#3: questions
+#4: users
+#5: tags
+
+csed_og <- file_list %>% lapply(read.csv, header=TRUE)  # csed_og[[i]] = sample i  |  csed_og[[i]][1,] = row 1 of sample i
+csed_og %>% sapply(names)
+csed_og %>% sapply(dim)
+
+csed_ans <- csed_og[[1]] %>% as.data.frame
+csed_comm <- csed_og[[2]] %>% as.data.frame
+csed_users <- csed_og[[4]] %>% as.data.frame
+csed_tags <- csed_og[[5]] %>% as.data.frame
+csed_ques <- csed_og[[3]] %>% as.data.frame %>% arrange(desc(score))  # the list of original questions
+csed_ques_top <- csed_ques %>% filter(score >= csed_ques$score[50])
+
+```
+
+
+```{r users, include=TRUE}
+
+## merging the answers to the top 50 questions
+csed <- csed_ques_top %>% inner_join(csed_og[[1]], by = "question_id") %>%
+        as.data.frame
+
+#csed$question_id %>% unique %>% length   # these are the number of different questions
+
+csed$askers <- csed$owner_display_name.x %>% as.character
+csed$responders <- csed$owner_display_name.y %>% as.character
+
+#csed$askers %>% unique %>% length  # these are the different question askers
+#csed$responders %>% as.character %>% unique %>% length  # these are the different responders
+
+#csed %>% group_by(owner_display_name.y) %>% summarize(view_count %>% mean)
+
+
+## --------------------------------------------------------------
+## posts per contributor
+## --------------------------------------------------------------
+
+responders <- csed$responders %>% table %>% as.data.frame %>% arrange(desc(Freq))
+
+
+## --------------------------------------------------------------
+## calculating descriptive statistics
+## --------------------------------------------------------------
+
+library(moments)
+responders$Freq %>% mean %>% round(2)
+responders$Freq %>% sd %>% round(2)
+responders$Freq %>% median %>% round(2)
+responders$Freq %>% min
+responders$Freq %>% max
+responders$Freq %>% skewness %>% round(2)
+responders$Freq %>% kurtosis %>% round(2)
+
+```
+
+
+```{r users_vis, include=TRUE, echo=FALSE}  
+# the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot
+
+## histogram of answer scores
+hist1 <- ggplot(csed, aes(x=score.y)) + 
+        geom_histogram(binwidth=1, fill="#00BFFF") +
+        geom_hline(yintercept=0) +
+        geom_vline(xintercept=0, linetype="dashed") +
+        ggtitle("Histogram of Answer Scores") + 
+        xlab("Answer Score") + 
+        ylab("Frequency") +
+        theme_bw() + 
+        theme(plot.background = element_blank(),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              panel.border= element_blank(),
+              axis.line = element_line(color="black", size = .5)
+        )
+
+## histogram of responders
+hist2 <- ggplot(responders, aes(x=Freq)) + 
+        geom_histogram(binwidth=1, fill="#00BFFF") +
+        geom_hline(yintercept=0) +
+        geom_vline(xintercept=0, linetype="dashed") +
+        ggtitle("Histogram of Responders") + 
+        xlab("Number of Responses") + 
+        ylab("Frequency") +
+        theme_bw() + 
+        theme(plot.background = element_blank(),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              panel.border= element_blank(),
+              axis.line = element_line(color="black", size = .5)
+        )
+grid.arrange(hist1, hist2, nrow=1)
+ggsave("model-output/user_visualizations.png", width = 1.618 * 10, height = 1 * 10)
+```
+
+
+### Create the Network Graph
+
+```{r create_graph, include=TRUE}
+library(tidyverse); library(igraph)
+csed_graph <- csed %>% dplyr::select(responders, askers) %>%
+        as.matrix %>% graph_from_edgelist(directed=TRUE)
+# csed_graph %>% summary
+```
+
+
+### Network Statistics
+
+```{r network_stats, include=TRUE}
+csed_graph %>% gsize  # number of edges
+csed_graph %>% V %>% length  # number of vertices/nodes
+csed_graph %>% edge_density  # the ratio of the number of edges and the number of possible edges.
+        # Also called cohesion.
+csed_graph %>% transitivity("global")  # the probability that the adjacent vertices of a vertex are connected. 
+        # Also called the clustering coefficient. The balance of connections.
+csed_graph %>% vertex_connectivity  # If the graph is not (strongly) connected then the connectivity is obviously zero. 
+csed_graph %>% diameter  # the length of the longest geodesic (max distance between two vertices)
+csed_graph %>% reciprocity  # defines the proportion of mutual connections, in a directed graph.
+        # most commonly defined as the probability that the opposite counterpart of a directed edge is also included in the graph.
+csed_graph %>% eigen_centrality %>% '$'(value)  # The eigenvalue corresponding to the calculated eigenvector, i.e. the centrality scores.
+        # Eigenvector centrality scores correspond to the values of the first eigenvector of the graph adjacency matrix; 
+        # these scores may, in turn, be interpreted as arising from a reciprocal process in which the centrality of each actor is proportional to the sum of the centralities of those actors to whom he or she is connected.
+        # vertices with high eigenvector centralities are those which are connected to many other vertices which are, in turn, connected to many others (and so on).
+csed_graph %>% authority_score %>% '$'(value)  # The corresponding eigenvalue of the calculated principal eigenvector.
+        # The authority scores of the vertices are defined as the principal eigenvector of AT A, where A is the adjacency matrix of the graph.
+csed_graph %>% hub_score %>% '$'(value)  # The corresponding eigenvalue of the calculated principal eigenvector.
+csed_graph %>% centr_clo_tmax  # Theoretical maximum for closeness centralization
+```
+
+### Clustering
+
+A community is a set of nodes with many edges inside the community and few edges between outside it (i.e. between the community itself and the rest of the graph).
+
+The _spinglass clustering_ algorithm maps community detection onto finding the ground state of an infinite range spin glass. Csárdi, Nepusz, and Airoldi (2016, pp. 132-133) explained:
+
+"The clustering method of [Reichardt and Bornholdt](https://arxiv.org/abs/cond-mat/0603718) (2006) is motivated by spin glass models from statistical physics. Such models are used to describe and explain magnetism at the microscopic scale at finite temperatures. Reichardt and Bornholdt (2006) drew an analogy between spin glass models and the problem of community detection on graphs and proposed an algorithm based on the simulated annealing of the spin glass model to obtain well-defined communities in a graph. A spin glass model consists of a set of particles called spins that are coupled by ferromagnetic or antiferromagnetic bonds. Each spin can be in one of k possible states. The well-known Potts model then defines the total energy of the spin glass with a given spin configuration... Spins and interactions in the Potts model are very similar to graphs: each spin in the model corresponds to a vertex, and each interaction corresponds to an edge... Reichardt and Bornholdt (2006) gave efficient update rules for the above energy function, making it possible to apply a simulated annealing procedure to find the ground state of the model that corresponds to a low energy con- figuration. Their algorithm starts from a random configuration of spins and tries to flip all the spins once in each time step. After each individual spin flip, the energy of the new configuration is evaluated."
+
+In other words, the spinglass clustering algorithm partitions the vertices into communities by optimizing an energy function. The initial R code to produce spinglass clusters is straightforward:
+
+```{r spinglass}
+csg <- csed_graph %>% cluster_spinglass  # creates the clusters
+csg$membership %>% unique %>% length  # this is the number of clusters/communities/groups
+```
+
+One of the important outcomes of this method is the _modularity_ value. Modularity measures how good the division is, or how separated are the different vertex types from each other. The spinglass algorithm looks for the modularity of the optimal partition. For a given network, the partition with maximum modularity corresponds to the optimal community structure.
+
+Note that if M = 0, all nodes belong to one group; if M < 0, each node belongs to separate community. 
+
+```{r modularity}
+csg$modularity  # The modularity of a graph with respect to some division (or vertex types) 
+```
+
+*Test of Statistical Significance*
+
+The test for statistical significance for spinglass clustering is a bit different than the familiar tests that return _p_-values (Csárdi, Nepusz, & Airoldi (2016, pp. 132-138).
+
+The idea behind this test of siginficance is that a random network of equal size and degree distribution as our observed network should have a lower modularity score—that is, if the observerd network does in fact have statistically significant clustering.
+
+The following R procedure generates 100 randomized instances of our network (with the same size and degree distribution) using the `sample_ degseq()` function. The `method = 'vl'` ensures that there are no loop edges in the randomly generated networks. 
+
+A '0' result from this procudure indicates that no randomized networks have community structure with a modularity score that is higher than the one obtained from the original, observed network. Hence a '0' result means that our network has significant community structure.
+
+```{r spinglass_sig_test, include=TRUE}
+#degrees <- igraph::degree(csed_graph)
+#q <- csg$modularity
+#q_rand <- replicate(100, sample_degseq(degrees, method = 'vl'),
+#                simplify = FALSE) %>% 
+#        lapply(cluster_spinglass) %>%
+#        sapply(modularity) 
+#sum(q_rand > q) / 100
+```
+
+*Identifying the "Typical" Number of Clusters Returned with the Spinglass Algorithm*
+
+It is important to note that a different result is returned each time the spinglass clustering algorithm is run. For this reason, we need to run a number of simulations to see what the "typical" number of clusters are. For now, we run the algorithm 100 times and then look at the mean and median number of clusters obtained; for publication, we would run the algorithm 1,000 times.
+
+We made a note of a `seed` reproduces the median number of clusters, confirmed that this is reproducible, and then set this seed so that all future work will be run with this same clustering configuration.
+
+```{r spinglass_median_clusters, include=TRUE}
+
+#csg_matrix <- matrix(NA, nrow=1, ncol=100)
+#for (i in 1:100) {
+#        set.seed(i)
+#        csg <- csed_graph %>% cluster_spinglass
+#        csg_matrix[1,i] <- max(csg$membership)
+#}
+
+#csg_matrix %>% as.vector %>% mean
+#csg_matrix %>% as.vector %>% sd
+#csg_matrix %>% as.vector %>% min
+#csg_matrix %>% as.vector %>% max
+#csg_matrix %>% as.vector %>% median 
+#csg_matrix %>% as.vector %>% skewness
+#csg_matrix %>% as.vector %>% kurtosis
+```
+
+```{r spinglass_set, include=TRUE}
+set.seed(2)  # the solutions look different with a different seed
+csg <- csed_graph %>% cluster_spinglass
+csg$membership %>% unique %>% length  # number of clusters
+csg$csize  # size of each cluster
+csg$modularity  # modularity
+csg$temperature  # temperature
+csg$vcount  # number of vertices (nodes)
+#csg$names  # names of each of the vertices (nodes)
+
+```
+
+# Results
+
+## Network Visualization
+
+Finally, we created a visualization of our network structure, using the color palette generated by our spinglass clustering. Here, we used the `layout = 'fr'` algorithm, which is appropriate for large (but still with less than 1,000 nodes), potentially disconnected networks.
+
+```{r cluster_palette, include=FALSE}
+my_palette <- c("#004972", "#0072B2", "#56B4E9", "#93CFF1",  # blues
+                "#F8F2A9", "#F0E442", "#E69F00", "#D55E00",  # yellows/oranges
+                "#8BD2BF", "#009E73", "#007354", "#003A2A",  # greens
+                "#ECCEDF", "#CC79A7", "#95597A", "#4B2C3D"  # pinks
+                )
+node_palette <- my_palette[csg$membership]
+```
+
+
+```{r network_vis, include=TRUE}
+## see https://www.data-imaginist.com/2017/ggraph-introduction-edges/
+
+library(ggraph)
+layout <- csed_graph %>% create_layout(layout = 'fr') 
+
+ggraph(layout) +
+        geom_edge_link(width=.1, 
+                       arrow = arrow(length=unit(1, 'mm'))
+                       ) +
+        geom_node_point(alpha=1, 
+                        size=1, 
+                        aes(color=node_palette)
+                        ) +
+        ggtitle("CSEd SE Network Visualization") + 
+        theme_bw() +  # makes background white (not gray)
+        theme(plot.background = element_blank(),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              panel.border = element_blank(),
+              axis.title = element_blank(),
+              axis.text = element_blank(),
+              axis.ticks = element_blank(),
+              legend.position="none"
+        )
+ggsave("model-output/csed_se_network_visualization.png", width = 1.618 * 10, height = 1 * 10)
+```
+
+# Selection Model
+
+Here we describe and build a selection model of users on CSEd SE choosing to answer certain questions. We used _linear mixed-effects_ models to construct our selection model.
+
+```{r df_build, include=FALSE}
+## Construct a dataframe of all possible interactions between CSEd SE users.
+csed_weighted_df <- csed_graph %>% 
+        as_adjacency_matrix(sparse=FALSE) %>% 
+        graph_from_adjacency_matrix(weighted=TRUE) %>%
+        get.data.frame
+
+all_contributors <- c(csed_weighted_df$from, csed_weighted_df$to) %>%
+        unique
+
+csed_full_weighted <- expand.grid(from=all_contributors,
+                                  to=all_contributors,
+                                  stringsAsFactors=FALSE) %>% 
+        dplyr::full_join(csed_weighted_df) %>%
+        rename(responder = from, asker = to) %>%
+        mutate(weight = ifelse(is.na(weight), 0, weight),
+               responder = as.factor(responder),
+               asker = as.factor(asker),
+               tie = if_else(weight > 0, 1, 0)
+               )
+```
+
+## Null $p_2$ Selection Model
+
+First we built the null $p_2$ model (i.e., only using edges) for predicting ties. 
+
+```{r p2_0, include=FALSE}
+#p2_0 <- glmer(tie ~ 1 + (1|responder) + (1|asker),
+#               family = "binomial",
+               #control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)), 
+#               data = csed_full_weighted)
+#saveRDS(p2_0, "model-output/p2_0.rds")
+
+p2_0 <- read_rds("model-output/p2_0.rds")
+```
+
+We then compared the Akaike information criterion (AIC) and the Bayesian information criterion (BIC), keeping in mind that smaller values are better. We have also included the Intraclass-Correlation Coefficient (ICC) scores for responders and askers.
+
+```{r p2_0_stats, include=TRUE}
+p2_0 %>% summary
+sjstats::icc(p2_0)
+```
+
+We have more work to do to build additional $p_2$ models; this is next our to-do list.
+
+## Level 1 Selection Model
+
+The selection model at level 1, for responder $i$, answering question $q$, asked by user $i\prime$:  
+
+$$log(\frac{p(\textrm{Answering a certain question}=1)}{1-p(\textrm{Answering a certain question}=1)}) = \theta_i + \theta_i\prime + \theta_q + \theta_1(\textrm{Prior relationship of $i$ and $i\prime$}) \\ + \theta_2(\textrm{Prior connection between $i$ and question tag $q$} ) + \epsilon_0$$
+
+Where
+
+1. $\theta_i$ = Responder effect
+2. $\theta_i\prime$ = Asker effect
+3. $\theta_q$ = Question effect
+4. Prior relationship of $i$ and $i\prime$ =  1 if $i$ had answered one of $i\prime$'s question or if $i\prime$'s had answered one $i$'s question previously; 0 if $i$ and $i\prime$ had no such interaction. 
+5. Prior connection between $i$ and question tag $q$ = 1 if $i$ had previously answered any question with the same topic tag(s) as question $q$; 0 if $i$ had no such connection with $q$.
+
+### Constructing the Level 1 ERGM
+
+Coming soon!
+
+## Level 2 Selection Models
+
+The selection model at level 2, for responder $i$;
+
+$$\theta_i = \alpha_0 + \alpha_1(\textrm{Reputation points}) + \alpha_2(\textrm{Role}) \\ + \alpha_3(\textrm{Duration of membership}) + \alpha_4(\textrm{Number of questions previously answered}) + \epsilon_1$$
+
+Where
+
+1. Reputation points = The numerical reputation points associated with each user.
+2. Role =  1 if the responder answering question is an editor or a moderator. 0 otherwise.
+3. Duration of Membership = Time in months of being a member of CSEd SE
+4. Number of questions previously asked = Total number of questions asked up until present time.
+
+***
+
+The selection model at level 2, for user $i\prime$ asking the question;
+
+$$\theta_i\prime = \beta_0 + \beta_1(\textrm{Reputation points}) + \beta_2(\textrm{Duration of membership}) \\ + \beta_3(\textrm{Number of questions previously asked}) + \epsilon_2$$
+
+Where
+
+1. Reputation points = The numerical reputation points associated with each user.
+2. Duration of Membership = Time in months of being a member of CSEd SE.
+3. Number of questions previously asked = Total number of questions asked up until present time.
+
+***
+
+The selection model at level 2, for question $q$;
+
+$$\theta_q = \gamma_0 + \gamma_1(\textrm{Number of votes}) + \gamma_2(\textrm{Number of answers}) + \gamma_3(\textrm{Number of views}) + \epsilon_3$$
+
+Where
+
+1. Number of votes =  Total up-votes the question got on the forum prior to $i$ answering the question.
+2. Number of answers =  Total answers the question had prior to $i$ answering the question.
+3. Number of views = Total views the question got on the forum prior to $i$ answering the question.
+
+# Possible sources of multicollinearity
+
+We tested to see if these variables are highly correlated and if we needed to change the models that we proposed. These are the correlations that we tested:
+
+1. Correlations between number of votes, answers, and views
+2. Correlations between reputation points and number of questions answered/asked
+
+First, we explored the correlations between the number of votes, answers, and views. Please see the plots and the correlation matrix below. As these variables were highly correlated, we decided to use only one, the number of votes. 
+
+```{r plots1, include=TRUE, echo=FALSE}
+stack.questions <- read.csv("data-CSEdSE-Ques-Metadata.csv")
+plot1 <- ggplot(stack.questions, aes(x=view_count, y=answer_count)) + 
+        geom_point() + 
+        geom_smooth(method='lm') +
+        ggtitle("Views vs. Answers") + 
+        xlab("Number of views") + 
+        ylab("Answer count") +
+        theme_bw() + 
+        theme(plot.background = element_blank(),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              panel.border= element_blank(),
+              axis.line = element_line(color="black", size = .5)
+              )
+plot2 <- ggplot(stack.questions, aes(x=view_count, y=score)) + 
+        geom_point() + 
+        geom_smooth(method='lm') +
+        ggtitle("Views vs. Votes") + 
+        xlab("Number of views") + 
+        ylab("Sum of votes") +
+        theme_bw() + 
+        theme(plot.background = element_blank(),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              panel.border= element_blank(),
+              axis.line = element_line(color="black", size = .5)
+              )
+grid.arrange(plot1, plot2, nrow=1)
+```
+
+```{r correlations1, include=TRUE}
+cor(stack.questions[c(4, 5, 6)], use = 'complete.obs') %>% round(2)
+```
+
+```{r usermetadata, include=FALSE}
+library(lubridate)
+stack.users <- read.csv("data-CSEdSE-Users-Metadata.csv") %>%
+        dplyr::rename(., owner_id = user_id)
+stack.answers <- read.csv("data-CSEdSE-Ans-Metadata.csv") %>% 
+        dplyr::rename(., owner_id = owner_user_id)
+
+usr.ans <- stack.answers %>% count(owner_id) %>% 
+        dplyr::rename(., answered_ques = n)
+usr.plus.data <- full_join(stack.users, usr.ans, by = 'owner_id')
+
+usr.ques <- stack.questions %>% 
+        count(owner_user_id) %>% 
+        dplyr::rename(., 
+                      owner_id = owner_user_id,
+                      questions_asked = n)
+usr.plus.data <- full_join(usr.plus.data, usr.ques, by = 'owner_id')
+
+usr.plus.data$membership_duration_days <- 
+        usr.plus.data$creation_date %>% 
+        interval(., mdy_hms("11-15-2018 08:00:00")) %>%
+        time_length("days")
+```
+
+
+```{r plots2, include=TRUE, echo=FALSE}
+plot3 <- ggplot(usr.plus.data, aes(x=reputation, y=answered_ques)) + 
+        geom_point() + 
+        geom_smooth(method='lm') +
+        ggtitle("Reputation vs Answers") + 
+        xlab("Reputation") + 
+        ylab("Questions answered") +
+        theme_bw() + 
+        theme(plot.background = element_blank(),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              panel.border= element_blank(),
+              axis.line = element_line(color="black", size = .5)
+              )
+plot4 <- ggplot(usr.plus.data, aes(x=reputation, y=questions_asked)) + 
+        geom_point() + 
+        geom_smooth(method='lm') +
+        ggtitle("Reputation vs Questions") + 
+        xlab("Reputation") + 
+        ylab("Questions asked") +
+        theme_bw() + 
+        theme(plot.background = element_blank(),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              panel.border= element_blank(),
+              axis.line = element_line(color="black", size = .5)
+              )
+plot5 <- ggplot(usr.plus.data, aes(x=reputation, y=membership_duration_days)) +
+        geom_point() + 
+        geom_smooth(method='lm') +
+        ggtitle("Reputation vs Membership duration") + 
+        xlab("Reputation") + 
+        ylab("Membership duration") +
+        theme_bw() + 
+        theme(plot.background = element_blank(),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              panel.border= element_blank(),
+              axis.line = element_line(color="black", size = .5)
+              )
+plot6 <- ggplot(usr.plus.data, aes(x=answered_ques, y=questions_asked)) + 
+        geom_point() + 
+        geom_smooth(method='lm') +
+        ggtitle("Questions asked vs answered") + 
+        xlab("Questions Answered") + 
+        ylab("Questions asked") +
+        theme_bw() + 
+        theme(plot.background = element_blank(),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              panel.border= element_blank(),
+              axis.line = element_line(color="black", size = .5)
+              )
+grid.arrange(plot3, plot4, plot5, plot6, nrow = 2)
+```
+
+```{r correlations2, include=TRUE}
+cor(usr.plus.data[c(11,25,26,27)], use = 'complete.obs') %>% round(2)
+```
+
+## UPDATED Level 2 Selection Models
+
+New model at level 2, for responder $i$;
+
+$$\theta_i = \alpha_0 + \alpha_1(\textrm{Reputation points}) + \alpha_2(\textrm{Role}) \\ + \alpha_3(\textrm{Duration of membership}) + \epsilon_1$$
+(We removed 'number of questions previously answered' as it was highly correlated with reputation points)
+
+*** 
+
+New model at level 2, for user $i\prime$ asking the question;
+
+$$\theta_i\prime = \beta_0 + \beta_1(\textrm{Reputation points}) + \beta_2(\textrm{Duration of membership})  + \epsilon_2$$
+(We removed 'number of questions previously asked' as it was highly correlated with reputation points)
+
+*** 
+
+New model at level 2, for question $q$;
+
+$$\theta_q = \gamma_0 + \gamma_1(\textrm{Number of votes}) + \epsilon_3$$
+
+(We removed 'number of answers' and 'number of views' as they were highly correlated with number of votes)
+
+### Constructing the Level 2 ERGMs
+
+Coming soon!
+
+# Future Research
+
+It is highly possible that in future research, we may add other variabes to the model, such as geographical location. Also, the variables we chose in this model reflect prior research on teacher interactions where things such as 'reputation', years of service (in CSEd SE it is 'membership duration', formally designated leaders (in CSEd SE it is 'editor/moderator'), previous ties, etc mattered for selection model. 
+
+# References
+
+Csárdi, G. (2018). igraph: Network analysis and visualization (Version 1.2.2) [R package]. Retrieved from https://CRAN.R-project.org/package=igraph
+
+Macià, M., & García, I. (2016). Informal online communities and networks as a source of teacher professional development: A review. Teaching and Teacher Education, 55, 291-307.
+
+Pedersen, T. L. (2018). ggraph: An implementation of grammar of graphics for graphs and networks (Version 1.0.2) [R package]. Retrieved from https://CRAN.R-project.org/package=ggraph
+
+R Core Team. (2018). R: A language and environment for statistical computing (Version 3.5.0) [Computer software]. Vienna, Austria: R Foundation for Statistical Computing. Retrieved from https://www.R-project.org/
+
+Robinson, D. (2015). stackr: An R package for connecting to the Stack Exchange API [R package]. Retrieved from https://github.com/dgrtwo/stackr 
+
+Wenger, E. (1998). Communities of practice: Learning, meaning, and identity. New York, NY: Cambridge University Press.
+
+Wenger, E. (2011). Communities of practice: A brief introduction
+
+Wickham, H., Chang, W., & RStudio. (2016). ggplot2: Create elegant data visualisations using the grammar of graphics (Version 2.2.1) [R package]. Retrieved from https://CRAN.R-project.org/package=ggplot2
+
+Wickham, H., François, R., Henry, L., Müller, K., & RStudio. (2018). dplyr: A grammar of data manipulation (Version 0.7.6) [R package]. Retrieved from https://CRAN.R-project.org/package=dplyr
