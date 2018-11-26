@@ -1,7 +1,7 @@
 ---
 title: "CS Educators Stack Exchange: Exploring User Interactions"
 author: "Sukanya Moudgalya & K. Bret Staudt Willet"
-date: "11/20/2018"
+date: "11/26/2018"
 output: pdf_document
 ---
 
@@ -90,16 +90,18 @@ csed_ques_top <- csed_ques %>% filter(score >= csed_ques$score[50])
 ```{r users, include=TRUE}
 
 ## merging the answers to the top 50 questions
-csed <- csed_ques_top %>% inner_join(csed_og[[1]], by = "question_id") %>%
-        as.data.frame
+csed <- csed_ques_top %>% 
+        inner_join(csed_og[[1]], by = "question_id") %>%
+        as.data.frame %>%
+        mutate(askers = owner_display_name.x %>% as.character,
+               responders = owner_display_name.y %>% as.character
+               )
 
-#csed$question_id %>% unique %>% length   # these are the number of different questions
-
-csed$askers <- csed$owner_display_name.x %>% as.character
-csed$responders <- csed$owner_display_name.y %>% as.character
-
-#csed$askers %>% unique %>% length  # these are the different question askers
-#csed$responders %>% as.character %>% unique %>% length  # these are the different responders
+csed$question_id %>% unique %>% length  # these are the number of distinct questions
+csed$askers %>% unique %>% length  # these are the different question askers
+csed$answer_id %>% unique %>% length  # these are the number of different answers
+csed$responders %>% unique %>% length  # these are the different responders
+c(csed$askers, csed$responders) %>% unique %>% length # these are total, distinct contributors (askers & responders)
 
 #csed %>% group_by(owner_display_name.y) %>% summarize(view_count %>% mean)
 
@@ -119,8 +121,7 @@ library(moments)
 responders$Freq %>% mean %>% round(2)
 responders$Freq %>% sd %>% round(2)
 responders$Freq %>% median %>% round(2)
-responders$Freq %>% min
-responders$Freq %>% max
+responders$Freq %>% range
 responders$Freq %>% skewness %>% round(2)
 responders$Freq %>% kurtosis %>% round(2)
 
@@ -226,9 +227,9 @@ csg$modularity  # The modularity of a graph with respect to some division (or ve
 
 The test for statistical significance for spinglass clustering is a bit different than the familiar tests that return _p_-values (Csárdi, Nepusz, & Airoldi (2016, pp. 132-138).
 
-The idea behind this test of siginficance is that a random network of equal size and degree distribution as our observed network should have a lower modularity score—that is, if the observerd network does in fact have statistically significant clustering.
+The idea behind this test of significance is that a random network of equal size and degree distribution as our observed network should have a lower modularity score—that is, if the observed network does in fact have statistically significant clustering.
 
-The following R procedure generates 100 randomized instances of our network (with the same size and degree distribution) using the `sample_ degseq()` function. The `method = 'vl'` ensures that there are no loop edges in the randomly generated networks. 
+The following R procedure generates 100 randomized instances of our network (with the same size and degree distribution) using the `sample_ degseq()` function. The `method = 'vl'` ensures that there are no loop edges in the randomly generated networks. We then applied the spinglass clustering algorithm to each of the 100 randomized instances of the network.
 
 A '0' result from this procudure indicates that no randomized networks have community structure with a modularity score that is higher than the one obtained from the original, observed network. Hence a '0' result means that our network has significant community structure.
 
